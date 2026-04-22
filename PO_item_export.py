@@ -5,10 +5,10 @@ Reads the latest file from each Amazon-Data subfolder and uploads
 it to the corresponding tab in Google Sheets.
 
 Folder -> Sheet mapping:
-    purchase-orders/ -> "Line Items April"
-    sales/           -> (add your sheet tab name here)
-    inventory/       -> (add your sheet tab name here)
-    traffic/         -> (add your sheet tab name here)
+    purchase-orders/    -> "Line Items April"
+    Last 2 days Sales/  -> "Last 2 days"
+    inventory/          -> "Inventory raw"
+    traffic/            -> (add your sheet tab name here)
 
 Usage:
     python PO_item_export.py
@@ -31,10 +31,9 @@ DATA_ROOT        = "C:/Users/makep/Documents/Amazon-Data"
 # Map each subfolder to: (sheet_tab_name, excel_sheet_name_or_None)
 # excel_sheet_name: name of the tab inside the Excel/XLS file to read (None = first sheet)
 FOLDER_MAP = {
-    "purchase-orders": ("Line Items April", "Line Items"),
-    # "sales":           ("YTD sales 2026",   None),
-    # "inventory":       ("Inventory report", None),
-    # "traffic":         ("Traffic raw data", None),
+    "purchase-orders":   ("Line Items April", "Line Items"),
+    "Last 2 days Sales": ("Last 2 days",      None),
+    "inventory":         ("Inventory raw",    None),
 }
 
 
