@@ -11,7 +11,7 @@ Folder -> Sheet mapping:
     traffic/            -> (add your sheet tab name here)
 
 Usage:
-    python PO_item_export.py
+    python "Amazon Daily Update.py"
 
 Requirements:
     pip install gspread google-auth pandas xlrd openpyxl
@@ -19,6 +19,7 @@ Requirements:
 
 import os
 import glob
+import numpy as np
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
@@ -57,11 +58,27 @@ def read_file(file_path: str, sheet_name=None) -> pd.DataFrame:
         return pd.read_excel(file_path, **kwargs)
 
 
+def clean_value(val):
+    """Convert a cell value to a Google Sheets compatible type, preserving numbers."""
+    if val is None:
+        return ""
+    if isinstance(val, float) and np.isnan(val):
+        return ""
+    if isinstance(val, np.integer):
+        return int(val)
+    if isinstance(val, np.floating):
+        return float(val)
+    return val
+
+
 def upload_to_sheet(ws: gspread.Worksheet, df: pd.DataFrame):
-    df = df.fillna("").astype(str)
-    data = [df.columns.tolist()] + df.values.tolist()
+    headers = df.columns.tolist()
+    rows = [
+        [clean_value(cell) for cell in row]
+        for row in df.itertuples(index=False, name=None)
+    ]
     ws.clear()
-    ws.update(data)
+    ws.update([headers] + rows)
 
 
 def main():
