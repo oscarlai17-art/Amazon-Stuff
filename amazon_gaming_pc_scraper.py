@@ -29,8 +29,8 @@ BSR_PAGES = [
     "https://www.amazon.com/Best-Sellers-Tower-Computers/zgbs/pc/13896597011/ref=zg_bs_pg_2?pg=2",
 ]
 
-OUTPUT_CSV   = "amazon_gaming_pcs_top100.csv"
-OUTPUT_EXCEL = "amazon_gaming_pcs_top100.xlsx"
+OUTPUT_CSV   = "C:/Users/makep/Documents/Amazon-Data/Top 100/amazon_gaming_pcs_top100.csv"
+OUTPUT_EXCEL = "C:/Users/makep/Documents/Amazon-Data/Top 100/amazon_gaming_pcs_top100.xlsx"
 
 # GPU keyword patterns to extract from product titles/descriptions
 GPU_PATTERNS = [
@@ -112,32 +112,47 @@ def scrape_bsr(pages: list[str]) -> list[dict]:
         time.sleep(3)
 
         try:
-            location_btn = page.query_selector("#nav-global-location-popover-link")
+            # Try multiple selectors for the location button
+            location_btn = (
+                page.query_selector("#nav-global-location-popover-link") or
+                page.query_selector("[data-nav-ref='nav_ya_signin']") or
+                page.query_selector("#glow-ingress-block")
+            )
             if location_btn:
                 location_btn.click()
                 time.sleep(2)
-                zip_input = page.query_selector("input[data-action='GLUXPostalUpdateAction']")
+                zip_input = (
+                    page.query_selector("input[data-action='GLUXPostalUpdateAction']") or
+                    page.query_selector("input[id='GLUXZipUpdateInput']") or
+                    page.query_selector("input[placeholder='Enter US zip code']")
+                )
                 if zip_input:
-                    zip_input.fill("10001")
+                    zip_input.click()
+                    zip_input.fill("")
+                    zip_input.type("10001", delay=80)
                     time.sleep(1)
-                    apply_btn = page.query_selector("input.a-button-input[aria-labelledby='GLUXZipUpdate-announce']")
+                    apply_btn = (
+                        page.query_selector("input.a-button-input[aria-labelledby='GLUXZipUpdate-announce']") or
+                        page.query_selector("span#GLUXZipUpdate input") or
+                        page.query_selector("input[aria-labelledby='GLUXZipUpdate-announce']")
+                    )
                     if apply_btn:
                         apply_btn.click()
                         time.sleep(2)
-                    done_btn = page.query_selector("button.a-button-text[name='glowDoneButton']")
+                    done_btn = (
+                        page.query_selector("button.a-button-text[name='glowDoneButton']") or
+                        page.query_selector("button[name='glowDoneButton']")
+                    )
                     if done_btn:
                         done_btn.click()
                         time.sleep(2)
                     print("   ✅ US location set to ZIP 10001 (New York)")
                 else:
-                    print("   ⚠️  ZIP input not found — please set location manually in the browser window then press Enter here")
-                    input()
+                    print("   ⚠️  ZIP input not found — continuing anyway (prices may vary)")
             else:
-                print("   ⚠️  Location button not found — please set location manually in the browser window then press Enter here")
-                input()
+                print("   ⚠️  Location button not found — continuing anyway (prices may vary)")
         except Exception as e:
-            print(f"   ⚠️  Auto location failed ({e}) — please set location manually then press Enter here")
-            input()
+            print(f"   ⚠️  Auto location failed ({e}) — continuing anyway (prices may vary)")
 
         for page_url in pages:
             print(f"\n📄 Fetching: {page_url}")

@@ -35,6 +35,7 @@ FOLDER_MAP = {
     "purchase-orders":   ("Line Items April", "Line Items", 0),
     "Last 2 days Sales": ("Last 2 days",      None,         1),
     "inventory":         ("Inventory raw",    None,         1),
+    "Top 100":           ("top 100",          None,         0),
 }
 
 
