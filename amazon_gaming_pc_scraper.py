@@ -24,24 +24,9 @@ from playwright.sync_api import sync_playwright
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 BSR_PAGES = [
-    # Tower Computers BSR (150 products)
+    # Tower Computers BSR (top 100 products — 2 pages)
     "https://www.amazon.com/Best-Sellers-Tower-Computers/zgbs/pc/13896597011/ref=zg_bs_pg_1?pg=1",
     "https://www.amazon.com/Best-Sellers-Tower-Computers/zgbs/pc/13896597011/ref=zg_bs_pg_2?pg=2",
-    "https://www.amazon.com/Best-Sellers-Tower-Computers/zgbs/pc/13896597011/ref=zg_bs_pg_3?pg=3",
-    "https://www.amazon.com/Best-Sellers-Tower-Computers/zgbs/pc/13896597011/ref=zg_bs_pg_4?pg=4",
-    "https://www.amazon.com/Best-Sellers-Tower-Computers/zgbs/pc/13896597011/ref=zg_bs_pg_5?pg=5",
-    # Desktop Computers BSR (150 products)
-    "https://www.amazon.com/Best-Sellers-Desktop-Computers/zgbs/electronics/565098/ref=zg_bs_pg_1?pg=1",
-    "https://www.amazon.com/Best-Sellers-Desktop-Computers/zgbs/electronics/565098/ref=zg_bs_pg_2?pg=2",
-    "https://www.amazon.com/Best-Sellers-Desktop-Computers/zgbs/electronics/565098/ref=zg_bs_pg_3?pg=3",
-    "https://www.amazon.com/Best-Sellers-Desktop-Computers/zgbs/electronics/565098/ref=zg_bs_pg_4?pg=4",
-    "https://www.amazon.com/Best-Sellers-Desktop-Computers/zgbs/electronics/565098/ref=zg_bs_pg_5?pg=5",
-    # Gaming PCs search results sorted by best sellers (200+ products)
-    "https://www.amazon.com/s?k=gaming+pc+desktop&rh=n%3A13896597011&s=exact-aware-popularity-rank&page=1",
-    "https://www.amazon.com/s?k=gaming+pc+desktop&rh=n%3A13896597011&s=exact-aware-popularity-rank&page=2",
-    "https://www.amazon.com/s?k=gaming+pc+desktop&rh=n%3A13896597011&s=exact-aware-popularity-rank&page=3",
-    "https://www.amazon.com/s?k=gaming+pc+desktop&rh=n%3A13896597011&s=exact-aware-popularity-rank&page=4",
-    "https://www.amazon.com/s?k=gaming+pc+desktop&rh=n%3A13896597011&s=exact-aware-popularity-rank&page=5",
 ]
 
 OUTPUT_CSV   = "amazon_gaming_pcs_top100.csv"
