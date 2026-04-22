@@ -68,6 +68,8 @@ def clean_value(val):
         return int(val)
     if isinstance(val, np.floating):
         return float(val)
+    if hasattr(val, 'isoformat'):   # datetime / Timestamp
+        return val.isoformat()
     return val
 
 
