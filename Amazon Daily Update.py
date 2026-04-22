@@ -29,12 +29,12 @@ CREDENTIALS_FILE = "C:/Users/makep/Downloads/amazon-494102-3bd915b4a36e.json"
 SPREADSHEET_ID   = "1zhlqL2tqKvI70h0OQ_V46erwwLA9ztp0PjkJ3B7BgSI"
 DATA_ROOT        = "C:/Users/makep/Documents/Amazon-Data"
 
-# Map each subfolder to: (sheet_tab_name, excel_sheet_name_or_None)
-# excel_sheet_name: name of the tab inside the Excel/XLS file to read (None = first sheet)
+# Map each subfolder to: (sheet_tab_name, excel_sheet_name_or_None, csv_skiprows)
+# csv_skiprows: Amazon vendor CSV exports have 1 metadata row before the real header
 FOLDER_MAP = {
-    "purchase-orders":   ("Line Items April", "Line Items"),
-    "Last 2 days Sales": ("Last 2 days",      None),
-    "inventory":         ("Inventory raw",    None),
+    "purchase-orders":   ("Line Items April", "Line Items", 0),
+    "Last 2 days Sales": ("Last 2 days",      None,         1),
+    "inventory":         ("Inventory raw",    None,         1),
 }
 
 
@@ -49,13 +49,28 @@ def get_latest_file(folder_path: str) -> str | None:
     return max(files, key=os.path.getmtime)
 
 
-def read_file(file_path: str, sheet_name=None) -> pd.DataFrame:
+def coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert object columns to numeric where every non-empty value is a number."""
+    for col in df.columns:
+        if df[col].dtype == object:
+            converted = pd.to_numeric(df[col], errors="coerce")
+            original_null = df[col].isna() | (df[col].astype(str).str.strip() == "")
+            new_null = converted.isna()
+            if (new_null & ~original_null).sum() == 0:
+                df[col] = converted
+    return df
+
+
+def read_file(file_path: str, sheet_name=None, skiprows=0) -> pd.DataFrame:
     ext = os.path.splitext(file_path)[1].lower()
     if ext == ".csv":
-        return pd.read_csv(file_path)
+        df = pd.read_csv(file_path, skiprows=skiprows, encoding="utf-8-sig")
     else:
         kwargs = {"sheet_name": sheet_name} if sheet_name else {"sheet_name": 0}
-        return pd.read_excel(file_path, **kwargs)
+        if skiprows:
+            kwargs["skiprows"] = skiprows
+        df = pd.read_excel(file_path, **kwargs)
+    return coerce_numeric(df)
 
 
 def clean_value(val):
@@ -91,7 +106,7 @@ def main():
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(SPREADSHEET_ID)
 
-    for folder, (tab_name, excel_sheet) in FOLDER_MAP.items():
+    for folder, (tab_name, excel_sheet, skiprows) in FOLDER_MAP.items():
         folder_path = os.path.join(DATA_ROOT, folder)
         file_path = get_latest_file(folder_path)
 
@@ -101,7 +116,7 @@ def main():
 
         print(f"Reading: {os.path.basename(file_path)} -> '{tab_name}'")
         try:
-            df = read_file(file_path, sheet_name=excel_sheet)
+            df = read_file(file_path, sheet_name=excel_sheet, skiprows=skiprows)
             ws = sh.worksheet(tab_name)
             upload_to_sheet(ws, df)
             print(f"  Uploaded {len(df)} rows x {len(df.columns)} cols to '{tab_name}'")
