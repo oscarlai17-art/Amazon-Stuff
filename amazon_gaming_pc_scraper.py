@@ -107,7 +107,7 @@ def scrape_bsr(pages: list[str]) -> list[dict]:
         page = context.new_page()
 
         # Open Amazon homepage first and set US zip code manually via location popup
-        print("   🌎 Setting US delivery location (ZIP 10001 - New York)...")
+        print("   Setting US delivery location (ZIP 10001 - New York)...")
         page.goto("https://www.amazon.com", wait_until="domcontentloaded", timeout=30000)
         time.sleep(3)
 
@@ -156,8 +156,13 @@ def scrape_bsr(pages: list[str]) -> list[dict]:
 
         for page_url in pages:
             print(f"\n📄 Fetching: {page_url}")
-            try:
-                page.goto(page_url, wait_until="networkidle", timeout=60000)
+            for attempt in range(3):
+              try:
+                try:
+                    page.goto(page_url, wait_until="load", timeout=60000)
+                except Exception:
+                    # Page may still be usable even if load event times out
+                    pass
                 time.sleep(random.uniform(3, 5))
                 
                 # Scroll down slowly to trigger lazy loading of all products
@@ -194,6 +199,10 @@ def scrape_bsr(pages: list[str]) -> list[dict]:
                 # Each product card on BSR pages
                 cards = page.query_selector_all("div.zg-grid-general-faceout, li.zg-item-immersion")
                 print(f"   Found {len(cards)} product cards")
+                if len(cards) == 0 and attempt < 2:
+                    print(f"   No cards found — retrying (attempt {attempt+2}/3)...")
+                    time.sleep(random.uniform(5, 8))
+                    continue
 
                 for card in cards:
                     rank_counter += 1
@@ -245,10 +254,15 @@ def scrape_bsr(pages: list[str]) -> list[dict]:
                         print(f"   ⚠️  Error parsing card #{rank_counter}: {e}")
                         rank_counter -= 1  # don't count failed cards
 
-            except Exception as e:
-                print(f"❌ Failed to load page: {e}")
+                break  # success — exit retry loop
 
-           # Polite pause between pages - longer to avoid detection
+              except Exception as e:
+                print(f"❌ Failed to load page: {e}")
+                if attempt < 2:
+                    print(f"   Retrying (attempt {attempt+2}/3)...")
+                    time.sleep(random.uniform(5, 8))
+
+            # Polite pause between pages - longer to avoid detection
             wait = random.uniform(8, 15)
             print(f"   ⏳ Waiting {wait:.1f} seconds before next page...")
             time.sleep(wait)
@@ -312,13 +326,13 @@ def main():
     print("=" * 60)
     print("  Amazon Gaming PC Top 100 BSR Scraper")
     print("=" * 60)
-    print("\n⚙️  Starting scrape — this takes ~60–90 seconds...")
+    print("\nStarting scrape -- this takes ~60-90 seconds...")
     print("   (polite delays between pages to avoid blocks)\n")
 
     products = scrape_bsr(BSR_PAGES)
     save_outputs(products)
 
-    print("\n🏁 Done! Open the .xlsx file for a formatted report.")
+    print("\nDone! Open the .xlsx file for a formatted report.")
     print("   Tip: If you hit CAPTCHAs, set headless=False in scrape_bsr()")
     print("        to see/solve them in a browser window.\n")
 

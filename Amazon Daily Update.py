@@ -18,6 +18,7 @@ Requirements:
 import os
 import re
 import glob
+import datetime
 import numpy as np
 import pandas as pd
 import gspread
@@ -28,11 +29,25 @@ CREDENTIALS_FILE = "C:/Users/makep/Downloads/amazon-494102-3bd915b4a36e.json"
 SPREADSHEET_ID   = "1zhlqL2tqKvI70h0OQ_V46erwwLA9ztp0PjkJ3B7BgSI"
 DATA_ROOT        = "C:/Users/makep/Documents/Amazon-Data"
 
+
+def _po_tab_name():
+    """Derive 'Line Items <Month>' from the latest PO file's name, falling back to current month."""
+    files = (glob.glob(os.path.join(DATA_ROOT, "purchase-orders", "*.xls")) +
+             glob.glob(os.path.join(DATA_ROOT, "purchase-orders", "*.xlsx")))
+    if files:
+        latest = max(files, key=os.path.getmtime)
+        m = re.search(r"_(\d{4})-(\d{2})-\d{2}", os.path.basename(latest))
+        if m:
+            month_name = datetime.date(int(m.group(1)), int(m.group(2)), 1).strftime("%B")
+            return f"Line Items {month_name}"
+    return f"Line Items {datetime.datetime.now().strftime('%B')}"
+
+
 FOLDER_MAP = {
-    "purchase-orders":   ("Line Items April", "Line Items", 0),
-    "Last 2 days Sales": ("Last 2 days",      None,         1),
-    "inventory":         ("Inventory raw",    None,         1),
-    "Top 100":           ("Top 100",          None,         0),
+    "purchase-orders":   (_po_tab_name(), "Line Items", 0),
+    "Last 2 days Sales": ("Last 2 days",  None,         1),
+    "inventory":         ("Inventory raw", None,        1),
+    "Top 100":           ("Top 100",       None,        0),
 }
 
 TRAFFIC_FOLDER    = os.path.join(DATA_ROOT, "traffic")
@@ -76,6 +91,21 @@ def read_file(file_path, sheet_name=None, skiprows=0):
     return coerce_numeric(df)
 
 
+def extract_hyperlinks_from_xlsx(file_path, col_idx, skiprows=0):
+    """Return a list of hyperlink URLs from a specific column in an xlsx file."""
+    import openpyxl
+    wb = openpyxl.load_workbook(file_path)
+    ws = wb.active
+    urls = []
+    for i, row in enumerate(ws.iter_rows(min_row=skiprows + 2)):  # +2: 1-indexed + skip header
+        cell = row[col_idx]
+        if cell.hyperlink:
+            urls.append(cell.hyperlink.target)
+        else:
+            urls.append(None)
+    return urls
+
+
 def clean_value(val):
     if val is None:
         return ""
@@ -90,14 +120,20 @@ def clean_value(val):
     return val
 
 
-def upload_to_sheet(ws, df):
+def upload_to_sheet(ws, df, url_col_idx=None):
     headers = df.columns.tolist()
-    rows = [
-        [clean_value(cell) for cell in row]
-        for row in df.itertuples(index=False, name=None)
-    ]
+    rows = []
+    for row in df.itertuples(index=False, name=None):
+        cells = []
+        for i, cell in enumerate(row):
+            val = clean_value(cell)
+            if url_col_idx is not None and i == url_col_idx and isinstance(val, str) and val.startswith("http"):
+                val = f'=HYPERLINK("{val}","{val}")'
+            cells.append(val)
+        rows.append(cells)
     ws.clear()
-    ws.update([headers] + rows)
+    input_option = "USER_ENTERED" if url_col_idx is not None else "RAW"
+    ws.update([headers] + rows, value_input_option=input_option)
 
 
 
@@ -194,7 +230,8 @@ def upload_traffic(sh):
             if not asin or asin == "nan":
                 continue
             views = row["Featured Offer Page Views"]
-            rows.append([date_str, asin, int(views) if pd.notna(views) else 0])
+            views_int = int(str(views).replace(',', '')) if pd.notna(views) else 0
+            rows.append([date_str, asin, views_int])
 
         if rows:
             raw_ws.append_rows(rows, value_input_option="RAW")
@@ -202,6 +239,136 @@ def upload_traffic(sh):
             print(f"  Appended {len(rows)} rows for {date_str} to '{TRAFFIC_RAW_SHEET}'")
 
     print("  Traffic raw up to date.")
+
+
+def col_num_to_letter(n):
+    result = ""
+    while n:
+        n, r = divmod(n - 1, 26)
+        result = chr(65 + r) + result
+    return result
+
+
+_MONTH_NAMES = {
+    "01": "January", "02": "February", "03": "March",    "04": "April",
+    "05": "May",     "06": "June",     "07": "July",     "08": "August",
+    "09": "September","10": "October", "11": "November", "12": "December",
+}
+
+# Per-sheet config: trailing column header and number of leading fixed columns
+_TREND_CONFIG = {
+    "Traffic trend":   ("L7D",   4),
+    "Unit Sold trend": ("L7D",   4),
+    "Revenue trend":   ("L7D",   4),
+    "ASP trend":       ("L7D",   4),
+    "CVR trend":       ("L7D",   4),
+    "PO list trend":   ("Total", 7),
+}
+
+
+def _make_formula(sheet_name, col_letter, col_1based, row, date=""):
+    if sheet_name == "Traffic trend":
+        return f"=IFERROR(SUMIFS('Traffic raw'!$C:$C,'Traffic raw'!$A:$A,INDIRECT(ADDRESS(1,COLUMN())),'Traffic raw'!$B:$B,$B{row}),0)"
+    if sheet_name == "Unit Sold trend":
+        return f"=IFERROR(SUMIFS('Unit sold raw'!$D:$D,'Unit sold raw'!$A:$A,INDIRECT(ADDRESS(1,COLUMN())),'Unit sold raw'!$B:$B,$B{row}),0)"
+    if sheet_name == "Revenue trend":
+        return f"=IFERROR(SUMIFS('Unit sold raw'!$C:$C,'Unit sold raw'!$A:$A,INDIRECT(ADDRESS(1,COLUMN())),'Unit sold raw'!$B:$B,$B{row}),0)"
+    if sheet_name == "ASP trend":
+        return (f"=Iferror(xlookup($B{row},'Revenue trend'!$B:$B,'Revenue trend'!{col_letter}:{col_letter},\"\")"
+                f"/xlookup($B{row},'Unit Sold trend'!$B:$B,'Unit Sold trend'!{col_letter}:{col_letter},\"\"),\"\")")
+    if sheet_name == "CVR trend":
+        unit_col = col_num_to_letter(col_1based - 4)
+        return f"=Iferror('Unit Sold trend'!{unit_col}{row}/'Traffic trend'!{col_letter}{row},\"\")"
+    if sheet_name == "PO list trend":
+        # Fully dynamic: INDIRECT(ADDRESS(1,COLUMN())) reads the date from the header row,
+        # INDIRECT(ADDRESS(ROW(),1)) reads the ASIN from col A of the current row.
+        # The month name is derived from the date header so the formula never needs updating.
+        month_fn = 'TEXT(DATE(2000,VALUE(LEFT(INDIRECT(ADDRESS(1,COLUMN())),2)),1),"MMMM")'
+        src = f'"\'Line Items "& {month_fn} &"\'"'
+        return (f'=IFERROR(SUMIFS('
+                f'INDIRECT({src}&"!$N:$N"),'
+                f'INDIRECT({src}&"!$C:$C"),'
+                f'INDIRECT(ADDRESS(1,COLUMN())),'
+                f'INDIRECT({src}&"!$G:$G"),'
+                f'INDIRECT(ADDRESS(ROW(),1))),0)')
+    return ""
+
+
+def _raw_dates_for(sh, sheet_name):
+    if sheet_name in ("Traffic trend", "PO list trend"):
+        return sorted(set(sh.worksheet("Traffic raw").col_values(1)[1:]))
+    return sorted(set(sh.worksheet("Unit sold raw").col_values(1)[1:]))
+
+
+def rebuild_po_list_trend(sh):
+    """Rewrite every date-column formula in PO list trend with the corrected universal formula."""
+    trend_ws   = sh.worksheet("PO list trend")
+    headers    = trend_ws.row_values(1)
+    total_idx  = headers.index("Total")   # 0-based
+    fixed_cols = 7
+    num_data_rows = len(trend_ws.col_values(1)) - 1
+
+    first_1based = fixed_cols + 1          # col 8 = H
+    last_1based  = total_idx               # last date col (0-based total_idx = 1-based last date)
+    n_date_cols  = last_1based - first_1based + 1
+
+    formula = _make_formula("PO list trend", "", 0, 0)
+    values  = [[formula] * n_date_cols for _ in range(num_data_rows)]
+
+    first_letter = col_num_to_letter(first_1based)
+    last_letter  = col_num_to_letter(last_1based)
+    trend_ws.update(
+        values,
+        f"{first_letter}2:{last_letter}{num_data_rows + 1}",
+        value_input_option="USER_ENTERED",
+    )
+    print(f"  Rebuilt {n_date_cols} PO list trend date columns with corrected formula.")
+
+
+def update_trend_sheet(sh, sheet_name):
+    raw_dates = _raw_dates_for(sh, sheet_name)
+    trend_ws  = sh.worksheet(sheet_name)
+    trailing_col, fixed_cols = _TREND_CONFIG[sheet_name]
+
+    headers      = trend_ws.row_values(1)
+    trailing_idx = headers.index(trailing_col)     # 0-based
+    existing     = set(headers[fixed_cols:trailing_idx])
+
+    new_dates = [d for d in raw_dates if d not in existing]
+    if not new_dates:
+        print(f"  '{sheet_name}' already up to date.")
+        return
+
+    num_data_rows = len(trend_ws.col_values(1)) - 1
+
+    sh.batch_update({
+        "requests": [{
+            "insertDimension": {
+                "range": {
+                    "sheetId": trend_ws.id,
+                    "dimension": "COLUMNS",
+                    "startIndex": trailing_idx,
+                    "endIndex": trailing_idx + len(new_dates),
+                },
+                "inheritFromBefore": True,
+            }
+        }]
+    })
+
+    for i, date in enumerate(new_dates):
+        col_1based = trailing_idx + i + 1
+        col_letter = col_num_to_letter(col_1based)
+        trend_ws.update_cell(1, col_1based, date)
+        values = [[_make_formula(sheet_name, col_letter, col_1based, r + 2, date)]
+                  for r in range(num_data_rows)]
+        trend_ws.update(
+            values,
+            f"{col_letter}2:{col_letter}{num_data_rows + 1}",
+            value_input_option="USER_ENTERED",
+        )
+        print(f"  [{sheet_name}] Added column: {date}")
+
+    print(f"  '{sheet_name}' updated with {len(new_dates)} new date(s).")
 
 
 def main():
@@ -222,8 +389,18 @@ def main():
         print(f"Reading: {os.path.basename(file_path)} -> '{tab_name}'")
         try:
             df = read_file(file_path, sheet_name=excel_sheet, skiprows=skiprows)
+            # Format Order date as MM/DD so PO list trend SUMIFS can match against date headers
+            if tab_name.startswith("Line Items") and "Order date" in df.columns:
+                df["Order date"] = pd.to_datetime(
+                    df["Order date"].astype(str), errors="coerce"
+                ).dt.strftime("%m/%d").fillna("")
+            url_col = 6 if tab_name == "Top 100" else None
+            if tab_name == "Top 100" and file_path.endswith(".xlsx"):
+                urls = extract_hyperlinks_from_xlsx(file_path, col_idx=url_col, skiprows=skiprows)
+                url_col_name = df.columns[url_col]
+                df[url_col_name] = urls[:len(df)]
             ws = sh.worksheet(tab_name)
-            upload_to_sheet(ws, df)
+            upload_to_sheet(ws, df, url_col_idx=url_col)
             print(f"  Uploaded {len(df)} rows x {len(df.columns)} cols to '{tab_name}'")
         except Exception as e:
             print(f"  Failed: {e}")
@@ -241,6 +418,21 @@ def main():
         upload_traffic(sh)
     except Exception as e:
         print(f"  Traffic upload failed: {e}")
+
+    # ── Fix all PO list trend formulas (corrects column refs + date format) ──────
+    print("\nRebuilding PO list trend formulas...")
+    try:
+        rebuild_po_list_trend(sh)
+    except Exception as e:
+        print(f"  PO list trend rebuild failed: {e}")
+
+    # ── Trend sheet column updates ─────────────────────────────────────────────
+    print("\nUpdating trend sheets...")
+    for trend_name in ["Traffic trend", "Unit Sold trend", "Revenue trend", "ASP trend", "CVR trend", "PO list trend"]:
+        try:
+            update_trend_sheet(sh, trend_name)
+        except Exception as e:
+            print(f"  '{trend_name}' update failed: {e}")
 
     print("\nAll done!")
 
