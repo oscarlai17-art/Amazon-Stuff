@@ -186,6 +186,8 @@ def upload_sales(sh):
                 revenue = 0.0
             ordered  = int(row["Ordered Units"])  if pd.notna(row.get("Ordered Units"))  else 0
             shipped  = int(row["Shipped Units"])  if pd.notna(row.get("Shipped Units"))  else 0
+            import math
+            revenue = 0.0 if (isinstance(revenue, float) and math.isnan(revenue)) else revenue
             rows.append([date_str, asin, revenue, ordered, shipped])
 
         if rows:
@@ -295,15 +297,34 @@ def _make_formula(sheet_name, col_letter, col_1based, row, date=""):
 
 
 def _raw_dates_for(sh, sheet_name):
-    if sheet_name in ("Traffic trend", "PO list trend"):
+    if sheet_name == "Traffic trend":
         return sorted(set(sh.worksheet("Traffic raw").col_values(1)[1:]))
+    if sheet_name == "PO list trend":
+        # Use Order dates from Line Items tabs (column C), not Traffic raw
+        dates = set()
+        today = datetime.date.today()
+        months_to_check = set()
+        for offset in range(3):  # current + previous 2 months
+            d = datetime.date(today.year, today.month, 1) - datetime.timedelta(days=30 * offset)
+            months_to_check.add(d.strftime("%B"))
+        for month in months_to_check:
+            try:
+                li_ws = sh.worksheet(f"Line Items {month}")
+                vals = li_ws.col_values(3)[1:]  # col C = Order date, skip header
+                dates.update(v for v in vals if v.strip() and re.match(r"\d{2}/\d{2}", v))
+            except gspread.exceptions.WorksheetNotFound:
+                pass
+        return sorted(dates)
     return sorted(set(sh.worksheet("Unit sold raw").col_values(1)[1:]))
 
 
 def rebuild_po_list_trend(sh):
-    """Rewrite every date-column formula in PO list trend with the corrected universal formula."""
+    """Rewrite every date-column formula in PO list trend — only if the formula is outdated."""
     trend_ws   = sh.worksheet("PO list trend")
     headers    = trend_ws.row_values(1)
+    if "Total" not in headers:
+        print("  'PO list trend' missing 'Total' column — skipping rebuild.")
+        return
     total_idx  = headers.index("Total")   # 0-based
     fixed_cols = 7
     num_data_rows = len(trend_ws.col_values(1)) - 1
@@ -312,10 +333,20 @@ def rebuild_po_list_trend(sh):
     last_1based  = total_idx               # last date col (0-based total_idx = 1-based last date)
     n_date_cols  = last_1based - first_1based + 1
 
+    if n_date_cols <= 0 or num_data_rows <= 0:
+        print("  'PO list trend' has no date columns to rebuild.")
+        return
+
+    # Check first data cell — skip rebuild if already uses correct INDIRECT pattern
+    first_letter = col_num_to_letter(first_1based)
+    sample = trend_ws.acell(f"{first_letter}2", value_render_option="FORMULA").value or ""
+    if "INDIRECT(ADDRESS(ROW(),1))" in sample:
+        print("  PO list trend formulas already up to date — skipping rebuild.")
+        return
+
     formula = _make_formula("PO list trend", "", 0, 0)
     values  = [[formula] * n_date_cols for _ in range(num_data_rows)]
 
-    first_letter = col_num_to_letter(first_1based)
     last_letter  = col_num_to_letter(last_1based)
     trend_ws.update(
         values,
@@ -399,7 +430,11 @@ def main():
                 urls = extract_hyperlinks_from_xlsx(file_path, col_idx=url_col, skiprows=skiprows)
                 url_col_name = df.columns[url_col]
                 df[url_col_name] = urls[:len(df)]
-            ws = sh.worksheet(tab_name)
+            try:
+                ws = sh.worksheet(tab_name)
+            except gspread.exceptions.WorksheetNotFound:
+                ws = sh.add_worksheet(title=tab_name, rows=10000, cols=len(df.columns))
+                print(f"  Created new tab '{tab_name}'")
             upload_to_sheet(ws, df, url_col_idx=url_col)
             print(f"  Uploaded {len(df)} rows x {len(df.columns)} cols to '{tab_name}'")
         except Exception as e:

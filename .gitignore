@@ -1,0 +1,16 @@
+# Google service account credentials — never commit
+*.json
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local data files
+*.csv
+*.xlsx
+*.xls
+
+# Debug/scratch scripts
+debug_*.py
+format_*.py
+create_*.py
