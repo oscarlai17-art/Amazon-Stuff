@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide",
 )
 
-CREDS    = "C:/Users/makep/Downloads/amazon-494102-3bd915b4a36e.json"
+CREDS    = "C:/Users/makep/Documents/Amazon-Stuff/amazon-494102-3bd915b4a36e.json"
 SHEET_ID = "1zhlqL2tqKvI70h0OQ_V46erwwLA9ztp0PjkJ3B7BgSI"
 
 def gc_connect():

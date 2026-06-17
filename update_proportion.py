@@ -10,7 +10,7 @@ import gspread
 import pandas as pd
 from google.oauth2.service_account import Credentials
 
-CREDENTIALS_FILE = "C:/Users/makep/Downloads/amazon-494102-3bd915b4a36e.json"
+CREDENTIALS_FILE = "C:/Users/makep/Documents/Amazon-Stuff/amazon-494102-3bd915b4a36e.json"
 SPREADSHEET_ID   = "1zhlqL2tqKvI70h0OQ_V46erwwLA9ztp0PjkJ3B7BgSI"
 PROPORTION_SHEET = "Proportion"
 
